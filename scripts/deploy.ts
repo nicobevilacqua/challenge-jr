@@ -20,6 +20,9 @@ async function main() {
 
   console.log('RockPaperScissors deployed to:', contract.address);
 
+  // wait until the contract is available across the entire net
+  await new Promise((resolve) => setTimeout(resolve, 1000 * 30));
+
   await run('verify:verify', {
     address: contract.address,
     constructorArguments: [tokenAddress, parsedAmount],
