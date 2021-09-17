@@ -1,17 +1,17 @@
 import { ethers } from 'hardhat';
 
 async function main() {
-	const RockPaperScissors = await ethers.getContractFactory('Greeter');
-	const greeter = await Greeter.deploy('Hello, Hardhat!');
+  const RockPaperScissors = await ethers.getContractFactory('Greeter');
+  const greeter = await Greeter.deploy('Hello, Hardhat!');
 
-	await greeter.deployed();
+  await greeter.deployed();
 
-	console.log('Greeter deployed to:', greeter.address);
+  console.log('Greeter deployed to:', greeter.address);
 }
 
 main()
-	.then(() => process.exit(0))
-	.catch((error) => {
-		console.error(error);
-		process.exit(1);
-	});
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
