@@ -91,6 +91,7 @@ contract RockPaperScissors {
 
   function declareWinner() public isGameFull {
     require(!winnerDeclared, "winner already declared");
+    winnerDeclared = true;
     
     Move player1Move = players[player1].move;
     Move player2Move = players[player2].move;
