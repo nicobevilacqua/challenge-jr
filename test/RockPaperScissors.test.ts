@@ -2,7 +2,6 @@ import { Contract } from '@ethersproject/contracts';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { TLSSocket } from 'tls';
 
 const { utils } = ethers;
 
