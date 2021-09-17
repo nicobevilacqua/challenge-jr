@@ -5,6 +5,7 @@ interface ERC20 {
   function transfer(address _to, uint256 _value) external returns (bool success);
   function allowance(address _owner, address _spender) external view returns (uint256 remaining);
   function transferFrom(address _from, address _to, uint256 _value) external returns (bool success);
+  function balanceOf(address account) external view returns (uint256 amount);
 }
 
 contract RockPaperScissors {
@@ -119,11 +120,11 @@ contract RockPaperScissors {
     if (player1 == msg.sender) {
       require(players[player2].move == Move.Empty, "player2 has already moved");
       player1 = address(0);
-      token.transfer(msg.sender, amount);
     } else {
       require(players[player1].move == Move.Empty, "player1 has already moved");
       player2 = address(0);
-      token.transfer(msg.sender, amount);
     }
+
+    token.transfer(msg.sender, amount);
   }
 }

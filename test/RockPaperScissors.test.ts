@@ -1,3 +1,4 @@
+import { BigNumber } from '@ethersproject/bignumber';
 import { Contract } from '@ethersproject/contracts';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
@@ -56,33 +57,42 @@ describe('RockPaperScissors', () => {
     await Promise.all([tx1.wait(), tx2.wait(), tx3.wait()]);
   });
 
+  async function approve(player: SignerWithAddress, amount = GAME_PAYMENT_AMOUNT) {
+    const tx = await token.connect(player).approve(contract.address, amount);
+    await tx.wait();
+  }
+
+  async function play(player: SignerWithAddress, move: Move, password = PLAYER1_PASSWORD) {
+    const encodedMove = await contract.connect(player).getEncodedMove(password, move);
+    const tx = await contract.connect(player).play(encodedMove);
+    await tx.wait();
+  }
+
+  async function reveal(player: SignerWithAddress, move: Move, password = PLAYER1_PASSWORD) {
+    const tx = await contract.connect(player).reveal(password, move);
+    await tx.wait();
+  }
+
+  async function withdraw(player: SignerWithAddress) {
+    const tx = await contract.connect(player).withdraw();
+    await tx.wait();
+  }
+
   async function playGame(player1Move: Move, player2Move: Move): Promise<[string, string]> {
     // allow contract transfer
-    const [a1, a2] = await Promise.all([
-      token.connect(player1).approve(contract.address, GAME_PAYMENT_AMOUNT),
-      token.connect(player2).approve(contract.address, GAME_PAYMENT_AMOUNT),
-    ]);
-    await Promise.all([a1.wait(), a2.wait()]);
+    await Promise.all([approve(player1), approve(player2)]);
 
     // get encoded moves using contract helper
-    const [em1, em2] = await Promise.all([
-      contract.connect(player1).getEncodedMove(PLAYER1_PASSWORD, player1Move),
-      contract.connect(player2).getEncodedMove(PLAYER2_PASSWORD, player2Move),
+    await Promise.all([
+      play(player1, player1Move, PLAYER1_PASSWORD),
+      play(player2, player2Move, PLAYER2_PASSWORD),
     ]);
-
-    // Play
-    const [p1, p2] = await Promise.all([
-      contract.connect(player1).play(em1),
-      contract.connect(player2).play(em2),
-    ]);
-    await Promise.all([p1.wait(), p2.wait()]);
 
     // Reveal
-    const [r1, r2] = await Promise.all([
-      contract.connect(player1).reveal(PLAYER1_PASSWORD, player1Move),
-      contract.connect(player2).reveal(PLAYER2_PASSWORD, player2Move),
+    await Promise.all([
+      reveal(player1, player1Move, PLAYER1_PASSWORD),
+      reveal(player2, player2Move, PLAYER2_PASSWORD),
     ]);
-    await Promise.all([r1.wait(), r2.wait()]);
 
     // the winner is declared
     const dwtx = await contract.declareWinner();
@@ -97,6 +107,10 @@ describe('RockPaperScissors', () => {
   }
 
   it('dummy wait', (done) => {
+    if (!process.env.REPORT_GAS) {
+      done();
+      return;
+    }
     setTimeout(done, 2000);
   });
 
@@ -125,5 +139,86 @@ describe('RockPaperScissors', () => {
     const [b1, b2] = await playGame(Move.Paper, Move.Paper);
     expect(b1).to.equal('1.0');
     expect(b2).to.equal('1.0');
+  });
+
+  describe('withdraw', () => {
+    beforeEach(async () => {
+      await approve(player1);
+    });
+
+    it('should fail if the user has not played yet', async () => {
+      try {
+        await withdraw(player1);
+        expect(false).to.equal(true);
+      } catch (error) {
+        expect(true).to.equal(true);
+      }
+    });
+
+    describe('if the user has played', () => {
+      beforeEach(async () => {
+        await play(player1, Move.Rock);
+      });
+
+      it(`should fail if other user tries to withdraw`, async () => {
+        try {
+          await withdraw(player2);
+        } catch (error) {
+          expect(true).to.equal(true);
+        }
+      });
+
+      it(`should be able to retire the founds if there is no other player`, async () => {
+        await withdraw(player1);
+        const [bp1, bc] = await Promise.all([
+          token.balanceOf(player1.address),
+          token.balanceOf(contract.address),
+        ]);
+        expect(utils.formatEther(bp1)).to.equal('1.0');
+        expect(utils.formatEther(bc)).to.equal('0.0');
+      });
+
+      describe('and the user has withdrawn before', () => {
+        beforeEach(async () => {
+          await withdraw(player1);
+        });
+
+        it(`a second withdraw should fail`, async () => {
+          try {
+            await withdraw(player1);
+          } catch (error) {
+            expect(true).to.equal(true);
+          }
+        });
+      });
+
+      describe(`and other user plays`, () => {
+        beforeEach(async () => {
+          await approve(player2);
+          await play(player2, Move.Rock);
+        });
+
+        it(`player1 should be able to retire the founds`, async () => {
+          await withdraw(player1);
+          const b = await token.balanceOf(player1.address);
+          expect(utils.formatEther(b)).to.equal('1.0');
+        });
+
+        it(`player2 should be able to retire the founds`, async () => {
+          await withdraw(player2);
+          const b = await token.balanceOf(player2.address);
+          expect(utils.formatEther(b)).to.equal('1.0');
+        });
+
+        it(`should fail for other players`, async () => {
+          try {
+            await withdraw(outsider);
+            expect(false).to.equal(true);
+          } catch (error) {
+            expect(true).to.equal(true);
+          }
+        });
+      });
+    });
   });
 });
