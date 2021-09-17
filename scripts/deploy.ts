@@ -1,12 +1,22 @@
 import { ethers } from 'hardhat';
 
 async function main() {
-  const RockPaperScissors = await ethers.getContractFactory('Greeter');
-  const greeter = await Greeter.deploy('Hello, Hardhat!');
+  let address: string = <string>process.env.TOKEN_ADDRESS;
+  const amount: string = <string>process.env.AMOUNT || '0.1';
 
-  await greeter.deployed();
+  if (!address) {
+    const TokenContract = await ethers.getContractFactory('ExampleERC20');
+    const token = await TokenContract.deploy();
+    await token.deployed();
+    address = token.address;
+  }
 
-  console.log('Greeter deployed to:', greeter.address);
+  const RockPaperScissors = await ethers.getContractFactory('RockPaperScissors');
+  const contract = await RockPaperScissors.deploy(address, ethers.utils.parseEther(amount));
+
+  await contract.deployed();
+
+  console.log('RockPaperScissors deployed to:', contract.address);
 }
 
 main()
