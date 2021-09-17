@@ -61,7 +61,7 @@ contract RockPaperScissors {
     token.transferFrom(msg.sender, address(this), amount);
 
     Player memory player = Player({
-      encodedMove: "",
+      encodedMove: _encodedMove,
       move: Move.Empty
     });
     players[msg.sender] = player;
@@ -71,8 +71,6 @@ contract RockPaperScissors {
     } else {
       player2 = msg.sender;
     }
-
-    players[msg.sender].encodedMove = _encodedMove;
   }
 
   function getEncodedMove(string calldata _password, Move _move) public pure returns(bytes32) {
@@ -82,9 +80,7 @@ contract RockPaperScissors {
 
   function reveal(string calldata _password, Move _move) public isGameFull isPlayer {
     require(players[msg.sender].move == Move.Empty, "Move already revealed");
-    
-    bytes32 validationString = keccak256(abi.encodePacked(_password, _move));
-    require(validationString == players[msg.sender].encodedMove, "Invalid move");
+    require(getEncodedMove(_password, _move) == players[msg.sender].encodedMove, "Invalid move");
 
     players[msg.sender].move = _move;
   }
