@@ -107,6 +107,7 @@ describe('RokPaperScissors', () => {
 
     return [utils.formatEther(b1), utils.formatEther(b2)];
   }
+
   it('encoded move should match', async () => {
     const localEncodedMove = utils.solidityKeccak256(
       ['string', 'uint8'],
