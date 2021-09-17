@@ -25,6 +25,8 @@ contract RockPaperScissors {
   mapping(Move => mapping(Move => uint8)) public results;
 
   mapping(address => Player) public players;
+
+  bool private winnerDeclared = false;
   
   address public player1;
   address public player2;
@@ -50,7 +52,7 @@ contract RockPaperScissors {
   }
 
   modifier isGameFull() {
-    require(player1 == address(0) && player2 == address(0), "Game is not full");
+    require(player1 != address(0) && player2 != address(0), "Game is not full");
     _;
   }
 
@@ -60,6 +62,8 @@ contract RockPaperScissors {
   }
 
   function pay() public spotAvailable {
+    console.log("pay", msg.sender);
+
     require(token.allowance(msg.sender, address(this)) >= amount, "Amount not allowed");
     
     token.transferFrom(msg.sender, address(this), amount);
@@ -79,20 +83,40 @@ contract RockPaperScissors {
   }
 
   function move(bytes32 _encodedMove) public isGameFull isPlayer {
-    require(players[msg.sender].encodedMove.length == 0, "User has already played");
+    console.log("move", msg.sender);
+
+    require(players[msg.sender].encodedMove == "", "User has already played");
     players[msg.sender].encodedMove = _encodedMove;
   }
 
+  function getEncodedMove(string calldata _password, Move _move) public pure returns(bytes32) {
+    bytes32 encodedMove = keccak256(abi.encodePacked(_password, _move));
+    return encodedMove;
+  }
+
   function reveal(string calldata _password, Move _move) public isGameFull isPlayer {
-    require(players[msg.sender].move != Move.Empty, "Move already revealed");
+    console.log("reveal", msg.sender);
+    require(players[msg.sender].move == Move.Empty, "Move already revealed");
     
     bytes32 validationString = keccak256(abi.encodePacked(_password, _move));
     require(validationString == players[msg.sender].encodedMove, "Invalid move");
+
+    if (_move == Move.Paper) {
+      console.log(msg.sender, " has played Paper");
+    } else if (_move == Move.Rock) {
+      console.log(msg.sender, " has played Rock");
+    } else if (_move == Move.Scissors) {
+      console.log(msg.sender, " has played Scissors");
+    }
 
     players[msg.sender].move = _move;
   }
 
   function declareWinner() public isGameFull {
+    require(!winnerDeclared, "winner already declared");
+    
+    console.log("declareWinner", msg.sender);
+    
     Move player1Move = players[player1].move;
     Move player2Move = players[player2].move;
 
@@ -100,10 +124,6 @@ contract RockPaperScissors {
     require(player2Move != Move.Empty, "player2 must reveal his move");
 
     uint8 winner = results[player1Move][player2Move];
-
-    // avoid reentrancy
-    player1 = address(0);
-    player2 = address(0);
 
     if (winner == 0) {
       console.log("tie");
@@ -113,13 +133,13 @@ contract RockPaperScissors {
     }
 
     if (winner == 1) {
-      console.log("player1 won");
+      console.log("player1 won", amount * 2);
       token.transfer(player1, amount * 2);
       return;
     }
 
     if (winner == 2) {
-      console.log("player2 won");
+      console.log("player2 won", amount * 2);
       token.transfer(player2, amount * 2);
       return;
     }
