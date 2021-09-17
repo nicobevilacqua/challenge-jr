@@ -7,15 +7,16 @@ import 'hardhat-gas-reporter';
 import 'solidity-coverage';
 import 'hardhat-watcher';
 import { task } from 'hardhat/config';
+import path from 'path';
 
 // This is a sample Hardhat task. To learn how to create your own go to
 // https://hardhat.org/guides/create-task.html
 task('accounts', 'Prints the list of accounts', async (taskArgs, hre) => {
-	const accounts = await hre.ethers.getSigners();
+  const accounts = await hre.ethers.getSigners();
 
-	for (const account of accounts) {
-		console.log(account.address);
-	}
+  for (const account of accounts) {
+    console.log(account.address);
+  }
 });
 
 // You need to export an object to set up your config
@@ -25,39 +26,42 @@ task('accounts', 'Prints the list of accounts', async (taskArgs, hre) => {
  * @type import('hardhat/config').HardhatUserConfig
  */
 export default {
-	solidity: '0.8.4',
+  solidity: '0.8.4',
 
-	networks: {
-		hardhat: {
-			initialBaseFeePerGas: 0, // workaround from https://github.com/sc-forks/solidity-coverage/issues/652#issuecomment-896330136 . Remove when that issue is closed.
-		},
+  networks: {
+    hardhat: {
+      initialBaseFeePerGas: 0, // workaround from https://github.com/sc-forks/solidity-coverage/issues/652#issuecomment-896330136 . Remove when that issue is closed.
+    },
 
-		rinkeby: {
-			url: process.env.RINKEBY_URL || '',
-			accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
-		},
-	},
+    rinkeby: {
+      url: process.env.RINKEBY_URL || '',
+      accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
+    },
+  },
 
-	gasReporter: {
-		enabled: process.env.REPORT_GAS !== undefined,
-		currency: 'USD',
-	},
+  gasReporter: {
+    enabled: process.env.REPORT_GAS !== undefined,
+    gasPrice: 21,
+    coinmarketcap: process.env.CMC_KEY,
+    currency: 'USD',
+    outputFile: process.env.TO_FILE ? path.resolve(__dirname, 'gasReporterOutput.json') : undefined,
+  },
 
-	watcher: {
-		compile: {
-			tasks: ['compile'],
-			files: ['./contracts'],
-			verbose: true,
-		},
+  watcher: {
+    compile: {
+      tasks: ['compile'],
+      files: ['./contracts'],
+      verbose: true,
+    },
 
-		test: {
-			tasks: [{ command: 'test', params: { testFiles: ['{path}'] } }],
-			files: ['./test/**/*'],
-			verbose: true,
-		},
-	},
+    test: {
+      tasks: [{ command: 'test', params: { testFiles: ['{path}'] } }],
+      files: ['./test/**/*'],
+      verbose: true,
+    },
+  },
 
-	etherscan: {
-		apiKey: process.env.ETHERSCAN_API_KEY,
-	},
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY,
+  },
 };

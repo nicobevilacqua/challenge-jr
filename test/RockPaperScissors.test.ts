@@ -15,24 +15,19 @@ enum Move {
 
 /*
 	STEPS:
-		1. user1 allows contract to transfer x tokens
-		2. user1 calls "pay" method and contract transfers x tokens from user1 to itself
-		3. user2 allows contract to transfer x tokens
-		4. user2 calls "pay" method and contract transfers x tokens from user2 to itself
-		5. user1 gets encoded move from contract helper
-		6. user1 calls "move" with hashed move
-		7. user2 gets encoded move from contract helper
-		8. user2 calls "move" with hashed move
-		9. user1 calls "reveal" with password and plain move, if user2 has revelead his move, then call "decideWinner"
-		10. user2 calls "reveal" with passowrd and plain move, if user1 has revelead his move, then call "decideWinner"
-		11. decideWinner is called, the tokens are transfered to the winner or returned to both players if there is a tie.
+		1. user1 allows the contract to transfer x tokens to itself.
+		2. user2 allows the contract to transfer x tokens to itself.
+		3. user1 and user2 get their encoded move from a contract helper.
+		4. user1 and user2 call "play" with their moves and paying the tokens to contract.
+		5. user1 and user2 call "reveal" with their password and raw move.
+		6. "decideWinner" is called, the tokens are transfered to the winner or returned to both players if there is a tie.
 */
 
 const GAME_PAYMENT_AMOUNT = utils.parseEther('0.1');
 const PLAYER1_PASSWORD = 'password1';
 const PLAYER2_PASSWORD = 'password2';
 
-describe('RokPaperScissors', () => {
+describe('RockPaperScissors', () => {
   let contract: Contract;
   let token: Contract;
   let owner: SignerWithAddress;
@@ -40,6 +35,7 @@ describe('RokPaperScissors', () => {
   let player2: SignerWithAddress;
   let outsider: SignerWithAddress;
   beforeEach(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     [owner, player1, player2, outsider] = await ethers.getSigners();
     const [TokenFactory, Factory] = await Promise.all([
       ethers.getContractFactory('ExampleERC20'),
@@ -69,25 +65,18 @@ describe('RokPaperScissors', () => {
     ]);
     await Promise.all([a1.wait(), a2.wait()]);
 
-    // pay fee
-    const [p1, p2] = await Promise.all([
-      contract.connect(player1).pay(),
-      contract.connect(player2).pay(),
-    ]);
-    await Promise.all([p1.wait(), p2.wait()]);
-
     // get encoded moves using contract helper
     const [em1, em2] = await Promise.all([
       contract.connect(player1).getEncodedMove(PLAYER1_PASSWORD, player1Move),
       contract.connect(player2).getEncodedMove(PLAYER2_PASSWORD, player2Move),
     ]);
 
-    // Move
-    const [m1, m2] = await Promise.all([
-      contract.connect(player1).move(em1),
-      contract.connect(player2).move(em2),
+    // Play
+    const [p1, p2] = await Promise.all([
+      contract.connect(player1).play(em1),
+      contract.connect(player2).play(em2),
     ]);
-    await Promise.all([m1.wait(), m2.wait()]);
+    await Promise.all([p1.wait(), p2.wait()]);
 
     // Reveal
     const [r1, r2] = await Promise.all([
@@ -107,6 +96,10 @@ describe('RokPaperScissors', () => {
 
     return [utils.formatEther(b1), utils.formatEther(b2)];
   }
+
+  it('dummy wait', (done) => {
+    setTimeout(done, 2000);
+  });
 
   it('encoded move should match', async () => {
     const localEncodedMove = utils.solidityKeccak256(

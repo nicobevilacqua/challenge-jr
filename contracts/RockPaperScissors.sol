@@ -1,7 +1,5 @@
 //SPDX-License-Identifier: Unlicense
-pragma solidity ^0.8.0;
-
-import "hardhat/console.sol";
+pragma solidity ^0.8.4;
 
 interface ERC20 {
   function transfer(address _to, uint256 _value) external returns (bool success);
@@ -17,7 +15,6 @@ contract RockPaperScissors {
   ERC20 public token;
 
   struct Player {
-    bool hasPaid;
     bytes32 encodedMove;
     Move move;
   }
@@ -46,46 +43,35 @@ contract RockPaperScissors {
     results[Move.Scissors][Move.Rock] = 2;
   }
 
-  modifier spotAvailable() {
-    require(player1 == address(0) || player2 == address(0), "Game is full");
-    _;
-  }
-
   modifier isGameFull() {
     require(player1 != address(0) && player2 != address(0), "Game is not full");
     _;
   }
 
   modifier isPlayer() {
-    require(player1 == msg.sender || player2 == msg.sender, "Not a player on this game");
+    require(player1 == msg.sender || player2 == msg.sender, "User is not a player");
     _;
   }
 
-  function pay() public spotAvailable {
-    console.log("pay", msg.sender);
+  function play(bytes32 _encodedMove) public {
+    require(player1 == address(0) || player2 == address(0), "Game is full");
+    require(players[msg.sender].encodedMove == "", "User has already played");
+    require(token.allowance(msg.sender, address(this)) >= amount, "Amount not approved");
 
-    require(token.allowance(msg.sender, address(this)) >= amount, "Amount not allowed");
-    
     token.transferFrom(msg.sender, address(this), amount);
-    
+
     Player memory player = Player({
-      hasPaid: true,
       encodedMove: "",
       move: Move.Empty
     });
-
     players[msg.sender] = player;
+
     if (player1 == address(0)) {
       player1 = msg.sender;
     } else {
       player2 = msg.sender;
     }
-  }
 
-  function move(bytes32 _encodedMove) public isGameFull isPlayer {
-    console.log("move", msg.sender);
-
-    require(players[msg.sender].encodedMove == "", "User has already played");
     players[msg.sender].encodedMove = _encodedMove;
   }
 
@@ -95,19 +81,10 @@ contract RockPaperScissors {
   }
 
   function reveal(string calldata _password, Move _move) public isGameFull isPlayer {
-    console.log("reveal", msg.sender);
     require(players[msg.sender].move == Move.Empty, "Move already revealed");
     
     bytes32 validationString = keccak256(abi.encodePacked(_password, _move));
     require(validationString == players[msg.sender].encodedMove, "Invalid move");
-
-    if (_move == Move.Paper) {
-      console.log(msg.sender, " has played Paper");
-    } else if (_move == Move.Rock) {
-      console.log(msg.sender, " has played Rock");
-    } else if (_move == Move.Scissors) {
-      console.log(msg.sender, " has played Scissors");
-    }
 
     players[msg.sender].move = _move;
   }
@@ -115,37 +92,33 @@ contract RockPaperScissors {
   function declareWinner() public isGameFull {
     require(!winnerDeclared, "winner already declared");
     
-    console.log("declareWinner", msg.sender);
-    
     Move player1Move = players[player1].move;
     Move player2Move = players[player2].move;
 
-    require(player1Move != Move.Empty, "player1 must reveal his move");
-    require(player2Move != Move.Empty, "player2 must reveal his move");
+    require(player1Move != Move.Empty, "player1 must move");
+    require(player2Move != Move.Empty, "player2 must move");
 
     uint8 winner = results[player1Move][player2Move];
 
     if (winner == 0) {
-      console.log("tie");
       token.transfer(player1, amount);
       token.transfer(player2, amount);
       return;
     }
 
     if (winner == 1) {
-      console.log("player1 won", amount * 2);
       token.transfer(player1, amount * 2);
       return;
     }
 
     if (winner == 2) {
-      console.log("player2 won", amount * 2);
       token.transfer(player2, amount * 2);
       return;
     }
   }
 
   function withdraw() public isPlayer {
+    // can withdraw only if the other player has not moved yet
     if (player1 == msg.sender) {
       require(players[player2].move == Move.Empty, "player2 has already moved");
       player1 = address(0);
