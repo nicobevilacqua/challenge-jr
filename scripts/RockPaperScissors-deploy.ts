@@ -11,10 +11,17 @@ async function main() {
     tokenAddress = token.address;
   }
 
+  const [player1, player2] = await ethers.getSigners();
+
   const parsedAmount = ethers.utils.parseEther(amount);
 
   const RockPaperScissors = await ethers.getContractFactory('RockPaperScissors');
-  const contract = await RockPaperScissors.deploy(tokenAddress, parsedAmount);
+  const contract = await RockPaperScissors.deploy(
+    tokenAddress,
+    parsedAmount,
+    player1.address,
+    player2.address
+  );
 
   await contract.deployed();
 
