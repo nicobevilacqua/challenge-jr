@@ -8,9 +8,8 @@ interface ERC20 {
   function balanceOf(address account) external view returns (uint256 amount);
 }
 
-enum Move { Empty, Rock, Paper, Scissors }
-
 contract RockPaperScissors {
+  enum Move { Empty, Rock, Paper, Scissors }
 
   uint256 public amount;
   ERC20 public token;
@@ -28,6 +27,7 @@ contract RockPaperScissors {
   address public player2;
 
   address public winner;
+  address public defeated;
   bool public active;
 
   uint256 public createdAt;
@@ -102,15 +102,15 @@ contract RockPaperScissors {
 
     if (winnerPlayer == 1) {
       winner = player1;
-      token.transfer(player1, token.balanceOf(address(this)));
-      return;
+      defeated = player2;
     }
 
     if (winnerPlayer == 2) {
       winner = player2;
-      token.transfer(player2, token.balanceOf(address(this)));
-      return;
+      defeated = player1;
     }
+
+    token.transfer(winner, token.balanceOf(address(this)));
   }
 
   function withdraw() public isPlayer {
@@ -129,9 +129,6 @@ contract RockPaperScissors {
 }
 
 contract RockPaperScissorsPro {
-
-  mapping(address => RockPaperScissors) public games; // all games
-
   mapping(address => mapping(address => address)) public activeGameWith; // active and last games
   mapping(address => address[]) public playerGamesList; // history
 
@@ -141,8 +138,6 @@ contract RockPaperScissorsPro {
     RockPaperScissors game = new RockPaperScissors(_token, _amount, msg.sender, _adversary);
     
     address gameAddress = address(game);
-    
-    games[gameAddress] = game;
 
     activeGameWith[msg.sender][_adversary] = gameAddress;
 
@@ -161,7 +156,7 @@ contract RockPaperScissorsPro {
   function newGame(address _adversary, address _token, uint256 _amount) public {
     address gameAddress = activeGameWith[msg.sender][_adversary];
     
-    RockPaperScissors game = games[gameAddress];
+    RockPaperScissors game = RockPaperScissors(gameAddress);
 
     require(gameAddress == address(0) || !game.active(), "game running");
 
@@ -170,58 +165,5 @@ contract RockPaperScissorsPro {
 
   function getActiveGameWith(address _adversary) public view returns (address) {
     return activeGameWith[msg.sender][_adversary];
-  }
-
-  struct PlayerBoard {
-    address player;
-    uint256 games;
-    uint256 wins;
-    uint256 defeats;
-    uint256 earned;
-    uint256 lost;
-  }
-
-  function _getPlayerScoreBoard(address _player) internal view returns(PlayerBoard memory) {
-    PlayerBoard memory playerBoard;
-    playerBoard.player = _player;
-    
-    address[] memory gamesList = playerGamesList[_player]; 
-
-    playerBoard.games = gamesList.length;
-
-    for (uint256 i = 0; i < gamesList.length; i++) {
-      RockPaperScissors game = games[gamesList[i]];
-
-      uint256 amount = game.amount();
-      address winner = game.winner();
-      if (winner != address(0)) {
-        if (game.winner() == _player) {
-          playerBoard.wins++;
-          playerBoard.earned += amount;
-        } else {
-          playerBoard.defeats++;
-          playerBoard.lost += amount;
-        }
-      }
-    }
-
-    return playerBoard;
-  }
-
-  function getPlayerScoreBoard(address _player) public view returns(uint256, uint256, uint256, uint256) {
-    PlayerBoard memory board = _getPlayerScoreBoard(_player);
-    return (board.wins, board.defeats, board.earned, board.lost);
-  }
-
-  function getScoreBoard() public view returns (PlayerBoard[] memory) {
-    PlayerBoard[] memory board = new PlayerBoard[](players.length);
-
-    for(uint256 i = 0; i < players.length; i++) {
-      address player = players[i];
-      PlayerBoard memory playerBoard = _getPlayerScoreBoard(player);
-      board[i] = playerBoard;
-    }
-
-    return board;  
   }
 }

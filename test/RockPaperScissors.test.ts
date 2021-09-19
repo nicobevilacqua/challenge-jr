@@ -111,14 +111,6 @@ describe('RockPaperScissors', () => {
     return [utils.formatEther(b1), utils.formatEther(b2)];
   }
 
-  it('dummy wait', (done) => {
-    if (!process.env.REPORT_GAS) {
-      done();
-      return;
-    }
-    setTimeout(done, 2000);
-  });
-
   it('encoded move should match', async () => {
     const localEncodedMove = utils.solidityKeccak256(
       ['string', 'uint8'],
