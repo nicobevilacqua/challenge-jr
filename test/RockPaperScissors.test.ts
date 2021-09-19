@@ -45,7 +45,12 @@ describe('RockPaperScissors', () => {
     token = await TokenFactory.connect(owner).deploy();
     await token.deployed();
 
-    contract = await Factory.connect(owner).deploy(token.address, GAME_PAYMENT_AMOUNT);
+    contract = await Factory.connect(owner).deploy(
+      token.address,
+      GAME_PAYMENT_AMOUNT,
+      player1.address,
+      player2.address
+    );
     await contract.deployed();
 
     const [tx1, tx2, tx3] = await Promise.all([
