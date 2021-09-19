@@ -29,7 +29,6 @@ describe('RockPaperScissorsPro', () => {
   let GameFactory: ContractFactory;
   let Factory: ContractFactory;
   beforeEach(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
     [owner, player1, player2, outsider] = await ethers.getSigners();
     [TokenFactory, GameFactory, Factory] = await Promise.all([
       ethers.getContractFactory('ExampleERC20'),

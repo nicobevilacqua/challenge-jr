@@ -1,5 +1,5 @@
 import { BigNumber } from '@ethersproject/bignumber';
-import { Contract } from '@ethersproject/contracts';
+import { Contract, ContractFactory } from '@ethersproject/contracts';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers, network } from 'hardhat';
@@ -13,16 +13,6 @@ enum Move {
   Scissors,
 }
 
-/*
-	STEPS:
-		1. user1 allows the contract to transfer x tokens to itself.
-		2. user2 allows the contract to transfer x tokens to itself.
-		3. user1 and user2 get their encoded move from a contract helper.
-		4. user1 and user2 call "play" with their moves and paying the tokens to contract.
-		5. user1 and user2 call "reveal" with their password and raw move.
-		6. "decideWinner" is called, the tokens are transfered to the winner or returned to both players if there is a tie.
-*/
-
 const GAME_PAYMENT_AMOUNT = utils.parseEther('0.1');
 const PLAYER1_PASSWORD = 'password1';
 const PLAYER2_PASSWORD = 'password2';
@@ -35,7 +25,6 @@ describe('RockPaperScissors', () => {
   let player2: SignerWithAddress;
   let outsider: SignerWithAddress;
   beforeEach(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
     [owner, player1, player2, outsider] = await ethers.getSigners();
     const [TokenFactory, Factory] = await Promise.all([
       ethers.getContractFactory('ExampleERC20'),
@@ -88,9 +77,23 @@ describe('RockPaperScissors', () => {
     await tx.wait();
   }
 
+  async function withdraw(player: SignerWithAddress) {
+    const tx = await contract.connect(player).withdraw();
+    await tx.wait();
+  }
+
   async function getFormattedBalance(signer: SignerWithAddress | Contract) {
     const balance = await token.balanceOf(signer.address);
     return utils.formatEther(balance);
+  }
+
+  async function testFail(step: Promise<void>) {
+    try {
+      await step;
+    } catch (error) {
+      return;
+    }
+    expect(true).to.equal(false);
   }
 
   async function playGame(player1Move: Move, player2Move: Move): Promise<[string, string]> {
@@ -119,25 +122,128 @@ describe('RockPaperScissors', () => {
     return [utils.formatEther(b1), utils.formatEther(b2)];
   }
 
-  it(`player1 should win`, async () => {
-    const [b1, b2] = await playGame(Move.Paper, Move.Rock);
-    expect(b1).to.equal('1.1');
-    expect(b2).to.equal('0.9');
+  describe('different winners', () => {
+    it(`player1 should win`, async () => {
+      const [b1, b2] = await playGame(Move.Paper, Move.Rock);
+      expect(b1).to.equal('1.1');
+      expect(b2).to.equal('0.9');
+    });
+
+    it(`player2 should win`, async () => {
+      const [b1, b2] = await playGame(Move.Paper, Move.Scissors);
+      expect(b1).to.equal('0.9');
+      expect(b2).to.equal('1.1');
+    });
+
+    it(`should be a tie`, async () => {
+      const [b1, b2] = await playGame(Move.Paper, Move.Paper);
+      expect(b1).to.equal('1.0');
+      expect(b2).to.equal('1.0');
+    });
   });
 
-  it(`player2 should win`, async () => {
-    const [b1, b2] = await playGame(Move.Paper, Move.Scissors);
-    expect(b1).to.equal('0.9');
-    expect(b2).to.equal('1.1');
+  describe('hacking tries', () => {
+    it('the game should been terminated if a player withdraw his funds early', async () => {
+      // there is no founds yet
+      await testFail(withdraw(player1));
+      await approve(player1);
+      await play(player1, Move.Paper, PLAYER1_PASSWORD);
+      await withdraw(player1);
+      // shouldn't be able to play again
+      await testFail(play(player1, Move.Paper, PLAYER1_PASSWORD));
+      // player2 shouldn't be able to play
+      await testFail(play(player2, Move.Paper, PLAYER2_PASSWORD));
+      // there is no rewards
+      await testFail(claimReward(player1));
+      await testFail(claimReward(player2));
+      // should be able to reveal anything
+      await testFail(reveal(player1, Move.Paper, PLAYER1_PASSWORD));
+
+      const [player1Balance, player2Balance, contractBalance] = await Promise.all([
+        getFormattedBalance(player1),
+        getFormattedBalance(player2),
+        getFormattedBalance(contract),
+      ]);
+
+      expect(player1Balance).to.equal('1.0');
+      expect(player2Balance).to.equal('1.0');
+      expect(contractBalance).to.equal('0.0');
+    });
+
+    it('steps must be followed in the right order', async () => {
+      // should fail without a previews approve on the token
+      await testFail(play(player1, Move.Paper, PLAYER1_PASSWORD));
+      await approve(player1, GAME_PAYMENT_AMOUNT);
+      await play(player1, Move.Paper, PLAYER1_PASSWORD);
+      // a second play should fail
+      await testFail(play(player1, Move.Paper, PLAYER1_PASSWORD));
+      // should fail if player2 hasnt move yet
+      await testFail(reveal(player1, Move.Paper, PLAYER1_PASSWORD));
+      await approve(player2, GAME_PAYMENT_AMOUNT);
+      await play(player2, Move.Scissors, PLAYER2_PASSWORD);
+
+      // the game has not finished yet
+      await testFail(claimReward(player1));
+      // should wait 1 day
+      await testFail(penalizeInactiveUser(player1));
+      await testFail(penalizeInactiveUser(player2));
+      // cannot withdraw if player2 has already moved
+      await testFail(withdraw(player1));
+      // should fail with a different move
+      await testFail(reveal(player2, Move.Rock, PLAYER2_PASSWORD));
+      // should fail with a different password
+      await testFail(reveal(player2, Move.Scissors, 'asdasd'));
+      await reveal(player2, Move.Scissors, PLAYER2_PASSWORD);
+      // should fail
+      await testFail(reveal(player2, Move.Scissors, PLAYER2_PASSWORD));
+      // should fail if player1 hasn't played yet
+      await testFail(claimReward(player1));
+      await reveal(player1, Move.Paper, PLAYER1_PASSWORD);
+      await claimReward(player1);
+      // shouldn't claim the reward twice
+      await testFail(claimReward(player1));
+      // cannot withdraw at this stage
+      await testFail(withdraw(player1));
+      // cannot withdraw at this stage
+      await testFail(withdraw(player2));
+      // cannot withdraw at this stage
+      await testFail(withdraw(owner));
+      await claimReward(player2);
+      // only players can claim rewards
+      await testFail(claimReward(owner));
+      // cannot withdraw at this stage
+      await testFail(withdraw(player1));
+
+      const [player1Balance, player2Balance, contractBalance] = await Promise.all([
+        getFormattedBalance(player1),
+        getFormattedBalance(player2),
+        getFormattedBalance(contract),
+      ]);
+
+      expect(player1Balance).to.equal('0.9');
+      expect(player2Balance).to.equal('1.1');
+      expect(contractBalance).to.equal('0.0');
+    });
+    it('outsider cannot call play', async () => {
+      try {
+        await play(outsider, Move.Rock);
+        expect(true).to.equal(false);
+      } catch (error) {
+        expect(true).to.equal(true);
+      }
+    });
+
+    it('outsider cannot call reveal', async () => {
+      try {
+        await play(outsider, Move.Rock);
+        expect(true).to.equal(false);
+      } catch (error) {
+        expect(true).to.equal(true);
+      }
+    });
   });
 
-  it(`should be a tie`, async () => {
-    const [b1, b2] = await playGame(Move.Paper, Move.Paper);
-    expect(b1).to.equal('1.0');
-    expect(b2).to.equal('1.0');
-  });
-
-  describe(`If the game starts`, () => {
+  describe(`penalize inactive player`, () => {
     beforeEach(async () => {
       // allow contract transfer
       await Promise.all([approve(player1), approve(player2)]);
@@ -152,7 +258,11 @@ describe('RockPaperScissors', () => {
       await reveal(player1, Move.Rock, PLAYER1_PASSWORD);
     });
 
-    describe(`and 1 day has passed`, () => {
+    it('cannot penalize a player before 1 day has passed', async () => {
+      await testFail(penalizeInactiveUser(player1));
+    });
+
+    describe(`if 1 day has passed and player2 hasn't finished his move`, () => {
       beforeEach(async () => {
         await network.provider.send('evm_increaseTime', [60 * 60 * 24]);
         await network.provider.send('evm_mine');
@@ -169,30 +279,20 @@ describe('RockPaperScissors', () => {
       });
 
       it('player1 cannot claim the tokens again', async () => {
-        try {
-          await penalizeInactiveUser(player2);
-          expect(true).to.equal(false);
-        } catch (error) {
-          expect(true).to.equal(true);
-        }
+        await testFail(penalizeInactiveUser(player2));
       });
 
       it('claimReward cannot be called after the penalization has being clamed', async () => {
-        try {
-          await claimReward(player1);
-          expect(true).to.equal(false);
-        } catch (error) {
-          expect(true).to.equal(true);
-        }
+        await testFail(claimReward(player1));
       });
 
-      it(`player2 shouldn't receive anything`, async () => {
-        try {
-          await penalizeInactiveUser(player2);
-          expect(true).to.equal(false);
-        } catch (error) {
-          expect(true).to.equal(true);
-        }
+      it('player2 cannot withdraw the funds', async () => {
+        await testFail(withdraw(player2));
+      });
+
+      it('player2 cannot do anything else', async () => {
+        await testFail(reveal(player2, Move.Paper, PLAYER2_PASSWORD));
+        await testFail(claimReward(player2));
       });
     });
   });

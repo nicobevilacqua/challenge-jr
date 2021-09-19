@@ -95,9 +95,31 @@ contract RockPaperScissors {
     return playersMove[player].value != Move.Empty;
   }
 
-  function play(bytes32 _encodedMove) public isPlayer {
-    require(playersMove[msg.sender].encoded == "", "User has already played");
-    
+  function _playerHasPlayed(address player) internal view returns(bool) {
+    return playersMove[player].encoded != "";
+  }
+
+  modifier playerHasPlayed() {
+    require(_playerHasPlayed(msg.sender), "Player has not played yet");
+    _;
+  }
+
+  modifier playerHasNotPlayed() {
+    require(!_playerHasPlayed(msg.sender), "Player has already played");
+    _;
+  }
+
+  function _getPlayerAdversary(address player) internal view returns(address) {
+    if (player == player1) {
+      return player2;
+    } 
+    if (player == player2) {
+      return player1;
+    }
+    return address(0);
+  }
+
+  function play(bytes32 _encodedMove) public isPlayer isGameActive playerHasNotPlayed {    
     token.transferFrom(msg.sender, address(this), amount);
 
     playersMove[msg.sender] = PlayerMove({
@@ -108,6 +130,14 @@ contract RockPaperScissors {
 
   function getEncodedMove(string calldata _password, Move _move) public view returns(bytes32) {
     return keccak256(abi.encodePacked(address(this), _password, _move));
+  }
+
+  function withdraw() public isPlayer isGameActive playerHasPlayed {    
+    address adversary = _getPlayerAdversary(msg.sender);
+    require(!_playerHasPlayed(adversary), "Adversary has already moved");
+
+    active = false;
+    token.transfer(msg.sender, amount);
   }
 
   function _reveal(string calldata _password, Move _move) internal {
@@ -131,6 +161,8 @@ contract RockPaperScissors {
   }
 
   function reveal(string calldata _password, Move _move) public isPlayer isGameActive {
+    require(_playerHasPlayed(_getPlayerAdversary(msg.sender)), "adversary hasn't play yet");
+
     _reveal(_password, _move);
 
     // declare a winner if both players have already played
@@ -144,11 +176,7 @@ contract RockPaperScissors {
       return address(0);
     }
 
-    if (winner == player1) {
-      return player2;
-    } else {
-      return player1;
-    }
+    return _getPlayerAdversary(winner);
   }
 
   function claimReward() public isPlayer isGameInactive unclaimedReward {
@@ -178,14 +206,9 @@ contract RockPaperScissors {
     active = false;
     rewardClaimed[msg.sender] = true;
 
-    if (player1 == msg.sender && !_playerHasMoved(player2)) {
+    address adversary = _getPlayerAdversary(msg.sender);
+    if (!_playerHasMoved(adversary)) {
       token.transfer(msg.sender, amount * 2);
-      return;
-    }
-
-    if (player2 == msg.sender && !_playerHasMoved(player1)) {
-      token.transfer(msg.sender, amount * 2);
-      return;
     }
   }
 }
