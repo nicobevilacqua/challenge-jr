@@ -8,8 +8,6 @@ interface ERC20 {
   function balanceOf(address account) external view returns (uint256 amount);
 }
 
-import "hardhat/console.sol";
-
 enum Move { Empty, Rock, Paper, Scissors }
 
 contract RockPaperScissors {
