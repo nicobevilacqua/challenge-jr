@@ -203,7 +203,7 @@ describe('RockPaperScissorsPro', () => {
       await playGame({ player: outsider, move: Move.Paper }, { player: owner, move: Move.Paper });
     });
 
-    it.only('get a list of defeated adversaries by player1', async () => {
+    it('get a list of defeated adversaries by player1', async () => {
       const { winnings, defeats } = await getPlayerAdversaries(player1);
 
       expect(winnings.length).to.equal(1);
