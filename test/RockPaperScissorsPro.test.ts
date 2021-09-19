@@ -97,14 +97,8 @@ describe('RockPaperScissorsPro', () => {
     await tx.wait();
   }
 
-  async function declareWinner(game: Contract) {
-    // console.log('declareWinner');
-    const tx = await game.declareWinner();
-    await tx.wait();
-  }
-
-  async function withdraw(game: Contract, player: SignerWithAddress) {
-    const tx = await game.connect(player).withdraw();
+  async function claimReward(game: Contract, player: SignerWithAddress) {
+    const tx = await game.connect(player).claimReward();
     await tx.wait();
   }
 
@@ -116,11 +110,11 @@ describe('RockPaperScissorsPro', () => {
       playerGames.map(async (address: string) => {
         const game = await GameFactory.attach(address);
         await game.deployed();
-        const [winner, defeated] = await Promise.all([game.winner(), game.defeated()]);
-        if (winner == player.address && !winnings.includes(defeated)) {
-          winnings.push(defeated);
+        const [winner, loser] = await Promise.all([game.winner(), game.loser()]);
+        if (winner == player.address && !winnings.includes(loser)) {
+          winnings.push(loser);
         }
-        if (defeated == player.address && !defeats.includes(winner)) {
+        if (loser == player.address && !defeats.includes(winner)) {
           defeats.push(winner);
         }
       })
@@ -154,7 +148,7 @@ describe('RockPaperScissorsPro', () => {
       reveal(game, gamePlayer2, p2.move, PLAYER2_PASSWORD),
     ]);
 
-    await declareWinner(game);
+    await Promise.all([claimReward(game, gamePlayer1), claimReward(game, gamePlayer2)]);
 
     return game;
   }
@@ -225,45 +219,5 @@ describe('RockPaperScissorsPro', () => {
 
     expect(utils.formatEther(b1)).to.equal('1.0');
     expect(utils.formatEther(b2)).to.equal('1.0');
-  });
-
-  describe('create a game and withdraw early', async () => {
-    let game: Contract;
-    beforeEach(async () => {
-      game = await newGame(player1, player2, token);
-
-      await Promise.all([approve(token, game, player1), approve(token, game, player2)]);
-
-      await Promise.all([
-        play(game, player1, Move.Rock, PLAYER1_PASSWORD),
-        play(game, player2, Move.Paper, PLAYER2_PASSWORD),
-      ]);
-
-      await withdraw(game, player1);
-    });
-
-    it('should disable reveal', async () => {
-      try {
-        await reveal(game, player1, Move.Rock, PLAYER1_PASSWORD);
-        expect(true).to.equal(false);
-      } catch (error) {
-        expect(true).to.equal(true);
-      }
-    });
-
-    it('player2 should be able to withdraw his funds', async () => {
-      await withdraw(game, player2);
-      const balance = await token.balanceOf(player2.address);
-      expect(utils.formatEther(balance)).to.equal('1.0');
-    });
-
-    it('revealWinner should be blocked', async () => {
-      try {
-        await declareWinner(game);
-        expect(true).to.equal(false);
-      } catch (error) {
-        expect(true).to.equal(true);
-      }
-    });
   });
 });

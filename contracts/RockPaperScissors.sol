@@ -19,7 +19,9 @@ contract RockPaperScissors {
     Move value;
   }
 
-  mapping(Move => mapping(Move => uint8)) public results;
+  mapping(Move => mapping(Move => address)) public results;
+
+  mapping(address => bool) public rewardClaimed;
 
   mapping(address => PlayerMove) public playersMove;
   
@@ -27,7 +29,7 @@ contract RockPaperScissors {
   address public player2;
 
   address public winner;
-  address public defeated;
+  
   bool public active;
 
   uint256 public createdAt;
@@ -43,24 +45,54 @@ contract RockPaperScissors {
     player2 = _player2;
 
     active = true;
+
     createdAt = block.timestamp;
 
-    results[Move.Rock][Move.Scissors] = 1;
-    results[Move.Rock][Move.Paper] = 2;
-    results[Move.Paper][Move.Rock] = 1;
-    results[Move.Paper][Move.Scissors] = 2;
-    results[Move.Scissors][Move.Paper] = 1;
-    results[Move.Scissors][Move.Rock] = 2;
+    results[Move.Rock][Move.Scissors] = player1;
+    results[Move.Rock][Move.Paper] = player2;
+    results[Move.Paper][Move.Rock] = player1;
+    results[Move.Paper][Move.Scissors] = player2;
+    results[Move.Scissors][Move.Paper] = player1;
+    results[Move.Scissors][Move.Rock] = player2;
   }
 
-  modifier isGameFull() {
-    require(player1 != address(0) && player2 != address(0), "Game is not full");
+  modifier isGameActive() {
+    require(active, "Game is not active");
+    _;
+  }
+
+  modifier isGameInactive() {
+    require(!active, "Game is still active");
     _;
   }
 
   modifier isPlayer() {
-    require(player1 == msg.sender || player2 == msg.sender, "User is not a player");
+    require(player1 == msg.sender || player2 == msg.sender, "Sender is not a player");
     _;
+  }
+
+  modifier isGameComplete() {
+    require(_getGameIsComplete(), "Incompleted game");
+    _;
+  }
+
+  modifier isGameIncomplete() {
+    require(!_getGameIsComplete(), "Complete game");
+    _;
+  }
+
+  modifier unclaimedReward() {
+    require(!rewardClaimed[msg.sender], "Reward already claimed");
+    _;
+  }
+
+  modifier playerHasMoved() {
+    require(_playerHasMoved(msg.sender), "Player has not moved yet");
+    _;
+  }
+
+  function _playerHasMoved(address player) internal view returns(bool) {
+    return playersMove[player].value != Move.Empty;
   }
 
   function play(bytes32 _encodedMove) public isPlayer {
@@ -74,60 +106,87 @@ contract RockPaperScissors {
     });
   }
 
-  function getEncodedMove(string calldata _password, Move _move) public pure returns(bytes32) {
-    return keccak256(abi.encodePacked(_password, _move));
+  function getEncodedMove(string calldata _password, Move _move) public view returns(bytes32) {
+    return keccak256(abi.encodePacked(address(this), _password, _move));
   }
 
-  function reveal(string calldata _password, Move _move) public isGameFull isPlayer {
+  function _reveal(string calldata _password, Move _move) internal {
     require(playersMove[msg.sender].value == Move.Empty, "Move already revealed");
     require(getEncodedMove(_password, _move) == playersMove[msg.sender].encoded, "Invalid move");
 
     playersMove[msg.sender].value = _move;
   }
 
-  function declareWinner() public isGameFull {
-    require(active, "winner already declared");
+  function _getGameIsComplete() internal view returns(bool) {
+    return playersMove[player1].value != Move.Empty && playersMove[player2].value != Move.Empty;
+  }
+
+  function _finishGame() internal {
     active = false;
-    
+
     Move player1Move = playersMove[player1].value;
-    Move player2Move = playersMove[player2].value;
+    Move player2Move = playersMove[player2].value;    
 
-    require(player1Move != Move.Empty, "player1 must move");
-    require(player2Move != Move.Empty, "player2 must move");
+    winner = results[player1Move][player2Move];
+  }
 
-    uint8 winnerPlayer = results[player1Move][player2Move];
+  function reveal(string calldata _password, Move _move) public isPlayer isGameActive {
+    _reveal(_password, _move);
 
-    if (winnerPlayer == 0) {
-      token.transfer(player1, amount);
-      token.transfer(player2, amount);
+    // declare a winner if both players have already played
+    if (_getGameIsComplete()) {
+      _finishGame();  
+    }
+  }
+
+  function loser() public view returns(address) {
+    if (winner == address(0)) {
+      return address(0);
+    }
+
+    if (winner == player1) {
+      return player2;
+    } else {
+      return player1;
+    }
+  }
+
+  function claimReward() public isPlayer isGameInactive unclaimedReward {
+    // claim reward one time
+    rewardClaimed[msg.sender] = true;
+
+    uint256 reward;
+
+    // tie
+    if (winner == address(0)) {
+      reward = amount;
+    }
+
+    // win
+    if (winner == msg.sender) {
+      reward = amount * 2;
+    }
+
+    if (reward > 0) {
+      token.transfer(msg.sender, reward);
+    }
+  }
+
+  function penalizeInactiveUser() public isPlayer unclaimedReward playerHasMoved {
+    require(createdAt <= block.timestamp - 1 days, "You should wait 1 day");
+    
+    active = false;
+    rewardClaimed[msg.sender] = true;
+
+    if (player1 == msg.sender && !_playerHasMoved(player2)) {
+      token.transfer(msg.sender, amount * 2);
       return;
     }
 
-    if (winnerPlayer == 1) {
-      winner = player1;
-      defeated = player2;
+    if (player2 == msg.sender && !_playerHasMoved(player1)) {
+      token.transfer(msg.sender, amount * 2);
+      return;
     }
-
-    if (winnerPlayer == 2) {
-      winner = player2;
-      defeated = player1;
-    }
-
-    token.transfer(winner, token.balanceOf(address(this)));
-  }
-
-  function withdraw() public isPlayer {
-    // can withdraw only if the other player has not moved yet
-    if (player1 == msg.sender) {
-      require(playersMove[player2].value == Move.Empty, "player2 has already moved");
-      player1 = address(0);
-    } else {
-      require(playersMove[player1].value == Move.Empty, "player1 has already moved");
-      player2 = address(0);
-    }
-
-    active = false; // disable game
-    token.transfer(msg.sender, amount);
   }
 }
 

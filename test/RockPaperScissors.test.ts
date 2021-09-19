@@ -2,7 +2,7 @@ import { BigNumber } from '@ethersproject/bignumber';
 import { Contract } from '@ethersproject/contracts';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { ethers, network } from 'hardhat';
 
 const { utils } = ethers;
 
@@ -68,7 +68,7 @@ describe('RockPaperScissors', () => {
   }
 
   async function play(player: SignerWithAddress, move: Move, password = PLAYER1_PASSWORD) {
-    const encodedMove = await contract.connect(player).getEncodedMove(password, move);
+    const encodedMove = await contract.getEncodedMove(password, move);
     const tx = await contract.connect(player).play(encodedMove);
     await tx.wait();
   }
@@ -78,9 +78,19 @@ describe('RockPaperScissors', () => {
     await tx.wait();
   }
 
-  async function withdraw(player: SignerWithAddress) {
-    const tx = await contract.connect(player).withdraw();
+  async function claimReward(player: SignerWithAddress) {
+    const tx = await contract.connect(player).claimReward();
     await tx.wait();
+  }
+
+  async function penalizeInactiveUser(player: SignerWithAddress) {
+    const tx = await contract.connect(player).penalizeInactiveUser();
+    await tx.wait();
+  }
+
+  async function getFormattedBalance(signer: SignerWithAddress | Contract) {
+    const balance = await token.balanceOf(signer.address);
+    return utils.formatEther(balance);
   }
 
   async function playGame(player1Move: Move, player2Move: Move): Promise<[string, string]> {
@@ -99,9 +109,7 @@ describe('RockPaperScissors', () => {
       reveal(player2, player2Move, PLAYER2_PASSWORD),
     ]);
 
-    // the winner is declared
-    const dwtx = await contract.declareWinner();
-    await dwtx.wait();
+    await Promise.all([claimReward(player1), claimReward(player2)]);
 
     const [b1, b2] = await Promise.all([
       token.balanceOf(player1.address),
@@ -110,15 +118,6 @@ describe('RockPaperScissors', () => {
 
     return [utils.formatEther(b1), utils.formatEther(b2)];
   }
-
-  it('encoded move should match', async () => {
-    const localEncodedMove = utils.solidityKeccak256(
-      ['string', 'uint8'],
-      [PLAYER1_PASSWORD, Move.Paper]
-    );
-    const contractEncodedMove = await contract.getEncodedMove(PLAYER1_PASSWORD, Move.Paper);
-    expect(localEncodedMove).to.equal(contractEncodedMove);
-  });
 
   it(`player1 should win`, async () => {
     const [b1, b2] = await playGame(Move.Paper, Move.Rock);
@@ -138,83 +137,62 @@ describe('RockPaperScissors', () => {
     expect(b2).to.equal('1.0');
   });
 
-  describe('withdraw', () => {
+  describe(`If the game starts`, () => {
     beforeEach(async () => {
-      await approve(player1);
+      // allow contract transfer
+      await Promise.all([approve(player1), approve(player2)]);
+
+      // get encoded moves using contract helper
+      await Promise.all([
+        play(player1, Move.Rock, PLAYER1_PASSWORD),
+        play(player2, Move.Paper, PLAYER2_PASSWORD),
+      ]);
+
+      // Reveal
+      await reveal(player1, Move.Rock, PLAYER1_PASSWORD);
     });
 
-    it('should fail if the user has not played yet', async () => {
-      try {
-        await withdraw(player1);
-        expect(false).to.equal(true);
-      } catch (error) {
-        expect(true).to.equal(true);
-      }
-    });
-
-    describe('if the user has played', () => {
+    describe(`and 1 day has passed`, () => {
       beforeEach(async () => {
-        await play(player1, Move.Rock);
+        await network.provider.send('evm_increaseTime', [60 * 60 * 24]);
+        await network.provider.send('evm_mine');
+        await penalizeInactiveUser(player1);
       });
 
-      it(`should fail if other user tries to withdraw`, async () => {
+      it(`player1 should receive all the tokens`, async () => {
+        const [contractBalance, playerBalance] = await Promise.all([
+          getFormattedBalance(contract),
+          getFormattedBalance(player1),
+        ]);
+        expect(contractBalance).to.equal('0.0');
+        expect(playerBalance).to.equal('1.1');
+      });
+
+      it('player1 cannot claim the tokens again', async () => {
         try {
-          await withdraw(player2);
+          await penalizeInactiveUser(player2);
+          expect(true).to.equal(false);
         } catch (error) {
           expect(true).to.equal(true);
         }
       });
 
-      it(`should be able to retire the founds if there is no other player`, async () => {
-        await withdraw(player1);
-        const [bp1, bc] = await Promise.all([
-          token.balanceOf(player1.address),
-          token.balanceOf(contract.address),
-        ]);
-        expect(utils.formatEther(bp1)).to.equal('1.0');
-        expect(utils.formatEther(bc)).to.equal('0.0');
+      it('claimReward cannot be called after the penalization has being clamed', async () => {
+        try {
+          await claimReward(player1);
+          expect(true).to.equal(false);
+        } catch (error) {
+          expect(true).to.equal(true);
+        }
       });
 
-      describe('and the user has withdrawn before', () => {
-        beforeEach(async () => {
-          await withdraw(player1);
-        });
-
-        it(`a second withdraw should fail`, async () => {
-          try {
-            await withdraw(player1);
-          } catch (error) {
-            expect(true).to.equal(true);
-          }
-        });
-      });
-
-      describe(`and other user plays`, () => {
-        beforeEach(async () => {
-          await approve(player2);
-          await play(player2, Move.Rock);
-        });
-
-        it(`player1 should be able to retire the founds`, async () => {
-          await withdraw(player1);
-          const b = await token.balanceOf(player1.address);
-          expect(utils.formatEther(b)).to.equal('1.0');
-        });
-
-        it(`player2 should be able to retire the founds`, async () => {
-          await withdraw(player2);
-          const b = await token.balanceOf(player2.address);
-          expect(utils.formatEther(b)).to.equal('1.0');
-        });
-
-        it(`should fail for other players`, async () => {
-          try {
-            await withdraw(outsider);
-            expect(false).to.equal(true);
-          } catch (error) {
-            expect(true).to.equal(true);
-          }
-        });
+      it(`player2 shouldn't receive anything`, async () => {
+        try {
+          await penalizeInactiveUser(player2);
+          expect(true).to.equal(false);
+        } catch (error) {
+          expect(true).to.equal(true);
+        }
       });
     });
   });
