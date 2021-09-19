@@ -1,66 +1,90 @@
-# Rock-Paper-Scissors test project
+# Game description
 
-You will create a smart contract named `RockPaperScissors` whereby:  
-Alice and Bob can play the classic game of rock, paper, scissors using ERC20 (of your choosing).    
-  
-- To enroll, each player needs to deposit the right token amount, possibly zero.  
-- To play, each Bob and Alice need to submit their unique move.  
-- The contract decides and rewards the winner with all token wagered.  
+The game consists of two contracts. 
 
-There are many ways to implement this, so we leave that up to you.  
-  
-## Stretch Goals
-Nice to have, but not necessary.
-- Make it a utility whereby any 2 people can decide to play against each other.  
-- Reduce gas costs as much as possible.
-- Let players bet their previous winnings.  
-- How can you entice players to play, knowing that they may have their funds stuck in the contract if they face an uncooperative player?  
-- Include any tests using Hardhat.
-  
-Now fork this repo and do it!
-  
-When you're done, please send an email to lucas@exactly.finance  with a link to your fork.  
-  
-Good luck!
-# Advanced Sample Hardhat Project
+The first contract is **RockPaperScissors.sol**. This contract is which has the game logic.
 
-This project demonstrates an advanced Hardhat use case, integrating other tools commonly used alongside Hardhat in the ecosystem.
+When two users want to play with each other a **RockPaperScissors.sol** contract must be deployed calling the constructor with these parameters:
 
-The project comes with a sample contract, a test for that contract, a sample script that deploys that contract, and an example of a task implementation, which simply lists the available accounts. It also comes with a variety of other tools, preconfigured to work with the project code.
-
-Try running some of the following tasks:
-
-```shell
-npx hardhat accounts
-npx hardhat compile
-npx hardhat clean
-npx hardhat test
-npx hardhat node
-npx hardhat help
-REPORT_GAS=true npx hardhat test
-npx hardhat coverage
-npx hardhat run scripts/deploy.js
-node scripts/deploy.js
-npx eslint '**/*.js'
-npx eslint '**/*.js' --fix
-npx prettier '**/*.{json,sol,md}' --check
-npx prettier '**/*.{json,sol,md}' --write
-npx solhint 'contracts/**/*.sol'
-npx solhint 'contracts/**/*.sol' --fix
+```
+constructor(address _tokenAddress, uint256 _amount, address _player1, address _player2)
 ```
 
-# Etherscan verification
+- **_tokenAddress**: An **ERC20** contract address which will be used to pay a reward in tokens to the game winner (or returned to their owners if there is a tie).
+- **_amount**: The amount of tokens that each player must locked on the contract in order to play the game.
+- **_player1**: First player address.
+- **_player2**: Second player address.
 
-To try out Etherscan verification, you first need to deploy a contract to an Ethereum network that's supported by Etherscan, such as Ropsten.
+> ## Game steps:
+> 1. The game contract is deployed on the blockchain.
+> 2. Each player allows the contract to transfer **amount** tokens from their wallets through the ERC20 token contract.
+> 3. Each user calls **play()** with his encoded move (obtained through **getEncodedMove()**). **amount** tokens are transfered from the player address to the contract address and locked until the game finishes.
+> 4. (3.1) If a player wants to recover his tokens and finish the game. He can call **withdraw()**, recover his tokens, and terminate the game. This can be done only if his adversary hasn't moved yet.
+> 5. After both players have played, each one have to call **reveal()** with their password and raw move. When the second player reveals his move, a winner is declared and the game finishes.
+> 6. Each player should call **claimRewards()** in order to unlock their tokens. Losers won't receive anything.
+> 7. If the game hasn't finished in 24 hours and a player has never sent his move, then the affected player can call **penalizeInactiveUser()** and transfer all the locked tokens to his address, penalizing the uncooperative player.
 
-In this project, copy the .env.template file to a file named .env, and then edit it to fill in the details. Enter your Etherscan API key, your Ropsten node URL (eg from Alchemy), and the private key of the account which will send the deployment transaction. With a valid .env file in place, first deploy your contract:
+## Functions
 
-```shell
-hardhat run --network ropsten scripts/deploy.js
-```
+> ### getEncodedMove
+>```
+> function getEncodedMove(string calldata _password, Move _move) public view returns(bytes32)
+>```
+> Helper function that players must use to generate their encoded move.
 
-Then, copy the deployment address and paste it in to replace `DEPLOYED_CONTRACT_ADDRESS` in this command:
+> ### play
+>```
+> function play(bytes32 _encodedMove) public isPlayer isGameActive playerHasNotPlayed
+>```
+> This function must be called by both players after they approved the contract to transfer **amount** tokens from their wallets. **_encodeMove** must be generated using the helper function **getEncodedMove**.
+>
+> Will fail if the contract cannot transfer and locked **amount** tokens from player wallet.
 
-```shell
-npx hardhat verify --network ropsten DEPLOYED_CONTRACT_ADDRESS "Hello, Hardhat!"
-```
+> ### reveal
+>```
+> function reveal(string calldata _password, Move _move) public isPlayer isGameActive
+>```
+> This function must be called by both players after each one has submitted their encoded moves and the tokens were already locked.
+> 
+> The players should send their passwords and moves used to generate **_encodedMove** through the function **getEncodedMove**.
+> If both players have already revealed their moves, then the game is finished and a winner is declared.
+
+> ### claimReward
+>```
+> function claimReward() public isPlayer isGameInactive unclaimedReward
+>```
+> Function that must be called by players in order to claim their rewards (if there is any).
+
+> ### penalizeInactiveUser
+>```
+> function penalizeInactiveUser() public isPlayer unclaimedReward playerHasMoved
+>```
+> Function that could be called by a player if their adversary never finishes his move and more than 24 hours have passed since contract creation. The uncooperative player will be penalized and all the tokens will be trasnfered to the player.
+
+> ### withdraw
+> ```
+> function withdraw() public isPlayer isGameActive playerHasPlayed
+> ```
+> Function that a player can call if he wants to recover his tokens without play. This can be done only if his adversary has not played before. If this function is called, the tokens will be transfered to their owner and the game will be deactivated.
+
+The second contract is **RockPaperScissorsPro.sol**. This contract acts as a dapp interface where different users can play with others and a history of games is saved.
+
+## functions
+
+> ### newGame
+>```
+> function newGame(address _adversary, address _token, uint256 _amount)
+>```
+> A function that a dapp can call in order to create a new game between **msg.sender** and **_adversary**. A **RockPaperScissors.sol** contract is deployed and the game address is saved.
+
+> ### getPlayerGames
+>```
+> function getPlayerGames(address _player) public view returns(address[] memory)
+>```
+> Get a list of game addresses where **_player** has been a participant.
+
+> ### getActiveGameWith
+>```
+> function getActiveGameWith(address _adversary) public view returns (address)
+>```
+> Get the game address between **msg.sender** and **_adversary** it this exists.
