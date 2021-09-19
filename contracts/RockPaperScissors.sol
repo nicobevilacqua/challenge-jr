@@ -33,6 +33,9 @@ contract RockPaperScissors {
   uint256 public createdAt;
 
   constructor(address _tokenAddress, uint256 _amount, address _player1, address _player2) {
+    require(_player1 != address(0), "player1 is invalid");
+    require(_player2 != address(0), "player2 is invalid");
+
     token = ERC20(_tokenAddress);
     amount = _amount;
 
@@ -133,6 +136,10 @@ contract RockPaperScissorsPro {
   mapping(address => address[]) public playerGamesList; // history
 
   address[] public players; // all players
+
+  function getPlayerGames(address _player) public view returns(address[] memory) {
+    return playerGamesList[_player];
+  }
 
   function _newGame(address _adversary, address _token, uint256 _amount) internal {
     RockPaperScissors game = new RockPaperScissors(_token, _amount, msg.sender, _adversary);

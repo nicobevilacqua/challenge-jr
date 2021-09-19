@@ -108,6 +108,26 @@ describe('RockPaperScissorsPro', () => {
     await tx.wait();
   }
 
+  async function getPlayerAdversaries(player: SignerWithAddress) {
+    const playerGames = await contract.getPlayerGames(player.address);
+    const winnings: string[] = [];
+    const defeats: string[] = [];
+    await Promise.all(
+      playerGames.map(async (address: string) => {
+        const game = await GameFactory.attach(address);
+        await game.deployed();
+        const [winner, defeated] = await Promise.all([game.winner(), game.defeated()]);
+        if (winner == player.address && !winnings.includes(defeated)) {
+          winnings.push(defeated);
+        }
+        if (defeated == player.address && !defeats.includes(winner)) {
+          defeats.push(winner);
+        }
+      })
+    );
+    return { winnings, defeats };
+  }
+
   interface Player {
     player?: SignerWithAddress;
     move: Move;
@@ -167,6 +187,29 @@ describe('RockPaperScissorsPro', () => {
 
     expect(utils.formatEther(b1)).to.equal('0.9');
     expect(utils.formatEther(b2)).to.equal('1.1');
+  });
+
+  describe('multiple games', () => {
+    beforeEach(async () => {
+      await playGame({ player: player1, move: Move.Paper }, { player: player2, move: Move.Rock });
+      await playGame(
+        { player: player2, move: Move.Scissors },
+        { player: player1, move: Move.Paper }
+      );
+      await playGame(
+        { player: outsider, move: Move.Scissors },
+        { player: player2, move: Move.Paper }
+      );
+      await playGame({ player: outsider, move: Move.Paper }, { player: owner, move: Move.Paper });
+    });
+
+    it.only('get a list of defeated adversaries by player1', async () => {
+      const { winnings, defeats } = await getPlayerAdversaries(player1);
+
+      expect(winnings.length).to.equal(1);
+      expect(winnings).deep.equal([player2.address]);
+      expect(defeats).deep.equal([player2.address]);
+    });
   });
 
   it('Should be a tie', async () => {
